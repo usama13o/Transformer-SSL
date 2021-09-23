@@ -7,14 +7,11 @@
 # --------------------------------------------------------
 
 from functools import partial
-from timm.models import vit_deit_small_patch16_224
 
 from .swin_transformer import SwinTransformer
 from .moby import MoBY
 
-vit_models = dict(
-    deit_small=vit_deit_small_patch16_224,
-)
+
 
 
 def build_model(config):

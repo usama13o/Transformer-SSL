@@ -43,7 +43,7 @@ def parse_option():
     )
 
     # easy config modification
-    parser.add_argument('--batch-size', type=int, help="batch size for single GPU")
+    parser.add_argument('--batch-size', type=int, help="batch size for single GPU",default=2)
     parser.add_argument('--data-path', type=str, help='path to dataset')
     parser.add_argument('--zip', action='store_true', help='use zipped dataset instead of folder dataset')
     parser.add_argument('--cache-mode', type=str, default='part', choices=['no', 'full', 'part'],
@@ -63,7 +63,7 @@ def parse_option():
     parser.add_argument('--throughput', action='store_true', help='Test throughput only')
 
     # distributed training
-    parser.add_argument("--local_rank", type=int, required=True, help='local rank for DistributedDataParallel')
+    parser.add_argument("--local_rank", type=int, required=False, help='local rank for DistributedDataParallel')
 
     args, unparsed = parser.parse_known_args()
 
@@ -187,29 +187,30 @@ def train_one_epoch(config, model, data_loader, optimizer, epoch, lr_scheduler):
 if __name__ == '__main__':
     _, config = parse_option()
 
-    if config.AMP_OPT_LEVEL != "O0":
-        assert amp is not None, "amp not installed!"
+    # if config.AMP_OPT_LEVEL != "O0":
+    #     assert amp is not None, "amp not installed!"
 
-    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ['WORLD_SIZE'])
-        print(f"RANK and WORLD_SIZE in environ: {rank}/{world_size}")
-    else:
-        rank = -1
-        world_size = -1
-    torch.cuda.set_device(config.LOCAL_RANK)
-    torch.distributed.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank)
-    torch.distributed.barrier()
+    # if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+    #     rank = int(os.environ["RANK"])
+    #     world_size = int(os.environ['WORLD_SIZE'])
+    #     print(f"RANK and WORLD_SIZE in environ: {rank}/{world_size}")
+    # else:
+    #     rank = -1
+    #     world_size = -1
+    # torch.cuda.set_device(config.LOCAL_RANK)
+    # torch.distributed.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank)
+    dist.init_process_group('gloo', init_method='file:///tmp/somefile', rank=0, world_size=1)
+    # torch.distributed.barrier()
 
-    seed = config.SEED + dist.get_rank()
+    seed = config.SEED 
     torch.manual_seed(seed)
     np.random.seed(seed)
     cudnn.benchmark = True
 
     # linear scale the learning rate according to total batch size, may not be optimal
-    linear_scaled_lr = config.TRAIN.BASE_LR * config.DATA.BATCH_SIZE * dist.get_world_size() / 512.0
-    linear_scaled_warmup_lr = config.TRAIN.WARMUP_LR * config.DATA.BATCH_SIZE * dist.get_world_size() / 512.0
-    linear_scaled_min_lr = config.TRAIN.MIN_LR * config.DATA.BATCH_SIZE * dist.get_world_size() / 512.0
+    linear_scaled_lr = config.TRAIN.BASE_LR * config.DATA.BATCH_SIZE / 512.0
+    linear_scaled_warmup_lr = config.TRAIN.WARMUP_LR * config.DATA.BATCH_SIZE / 512.0
+    linear_scaled_min_lr = config.TRAIN.MIN_LR * config.DATA.BATCH_SIZE  / 512.0
     # gradient accumulation also need to scale the learning rate
     if config.TRAIN.ACCUMULATION_STEPS > 1:
         linear_scaled_lr = linear_scaled_lr * config.TRAIN.ACCUMULATION_STEPS
@@ -222,13 +223,13 @@ if __name__ == '__main__':
     config.freeze()
 
     os.makedirs(config.OUTPUT, exist_ok=True)
-    logger = create_logger(output_dir=config.OUTPUT, dist_rank=dist.get_rank(), name=f"{config.MODEL.NAME}")
+    logger = create_logger(output_dir=config.OUTPUT, name=f"{config.MODEL.NAME}")
 
-    if dist.get_rank() == 0:
-        path = os.path.join(config.OUTPUT, "config.json")
-        with open(path, "w") as f:
-            f.write(config.dump())
-        logger.info(f"Full config saved to {path}")
+    # if dist.get_rank() == 0:
+    #     path = os.path.join(config.OUTPUT, "config.json")
+    #     with open(path, "w") as f:
+    #         f.write(config.dump())
+    #     logger.info(f"Full config saved to {path}")
 
     # print config
     logger.info(config.dump())
