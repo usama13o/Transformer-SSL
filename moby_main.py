@@ -85,10 +85,10 @@ def main(config):
     logger.info(str(model))
 
     optimizer = build_optimizer(config, model)
-    if config.AMP_OPT_LEVEL != "O0":
-        model, optimizer = amp.initialize(model, optimizer, opt_level=config.AMP_OPT_LEVEL)
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[config.LOCAL_RANK], broadcast_buffers=False)
-    model_without_ddp = model.module
+    # if config.AMP_OPT_LEVEL != "O0":
+    #     model, optimizer = amp.initialize(model, optimizer, opt_level=config.AMP_OPT_LEVEL)
+    # model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[config.LOCAL_RANK], broadcast_buffers=False)
+    model_without_ddp = model
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"number of params: {n_parameters}")
@@ -116,7 +116,7 @@ def main(config):
     logger.info("Start self-supervised pre-training")
     start_time = time.time()
     for epoch in range(config.TRAIN.START_EPOCH, config.TRAIN.EPOCHS):
-        data_loader_train.sampler.set_epoch(epoch)
+        # data_loader_train.sampler.set_epoch(epoch)
 
         train_one_epoch(config, model, data_loader_train, optimizer, epoch, lr_scheduler)
         if dist.get_rank() == 0 and (epoch % config.SAVE_FREQ == 0 or epoch == (config.TRAIN.EPOCHS - 1)):
@@ -146,7 +146,7 @@ def train_one_epoch(config, model, data_loader, optimizer, epoch, lr_scheduler):
         loss = model(samples_1, samples_2)
 
         optimizer.zero_grad()
-        if config.AMP_OPT_LEVEL != "O0":
+        if config.AMP_OPT_LEVEL == "O0":
             with amp.scale_loss(loss, optimizer) as scaled_loss:
                 scaled_loss.backward()
             if config.TRAIN.CLIP_GRAD:
@@ -190,16 +190,16 @@ if __name__ == '__main__':
     # if config.AMP_OPT_LEVEL != "O0":
     #     assert amp is not None, "amp not installed!"
 
-    # if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-    #     rank = int(os.environ["RANK"])
-    #     world_size = int(os.environ['WORLD_SIZE'])
-    #     print(f"RANK and WORLD_SIZE in environ: {rank}/{world_size}")
-    # else:
-    #     rank = -1
-    #     world_size = -1
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        rank = int(os.environ["RANK"])
+        world_size = int(os.environ['WORLD_SIZE'])
+        print(f"RANK and WORLD_SIZE in environ: {rank}/{world_size}")
+    else:
+        rank = -1
+        world_size = -1
     # torch.cuda.set_device(config.LOCAL_RANK)
     # torch.distributed.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank)
-    dist.init_process_group('gloo', init_method='file:///tmp/somefile', rank=0, world_size=1)
+    # dist.init_process_group('gloo', init_method='file:///tmp/somefile', rank=0, world_size=1)
     # torch.distributed.barrier()
 
     seed = config.SEED 
